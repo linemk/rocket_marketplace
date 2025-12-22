@@ -6,6 +6,9 @@ import "time"
 type LoggerConfig interface {
 	Level() string
 	AsJSON() bool
+	OTLPEnabled() bool
+	OTLPEndpoint() string
+	ServiceName() string
 }
 
 // PostgresConfig интерфейс конфигурации PostgreSQL

@@ -613,17 +613,22 @@ tasks:
       - echo "✅ Контейнеры удалены"
 
   infra:up:
-    desc: "Запустить всю инфраструктуру (Kafka + БД)"
-    deps: [ kafka:up, db:up ]
+    desc: "Запустить всю инфраструктуру (Kafka + БД + Observability)"
     cmds:
-      - echo "✅ Вся инфраструктура запущена"
+      - task: docker:network:create
+      - task: env:generate
+      - task: kafka:up
+      - task: db:up
+      - task: observability:up
+      - echo '[OK] Вся инфраструктура запущена'
 
   infra:down:
-    desc: "Остановить всю инфраструктуру (Kafka + БД)"
+    desc: "Остановить всю инфраструктуру (Kafka + БД + Observability)"
     cmds:
+      - task: observability:down
       - task: db:down
       - task: kafka:down
-      - echo "✅ Вся инфраструктура остановлена"
+      - echo '[OK] Вся инфраструктура остановлена'
 
   services:start:inventory:
     desc: "Запустить Inventory service"
@@ -643,7 +648,13 @@ tasks:
     desc: "Запустить Order service"
     cmds:
       - echo "🚀 Запускаем Order service..."
-      - cd order && go run cmd/main.go > /tmp/order.log 2>&1 &
+      - |
+        cd order && \
+        OTLP_ENABLED=true \
+        OTLP_ENDPOINT=localhost:4317 \
+        LOG_AS_JSON=true \
+        SERVICE_NAME=order \
+        go run cmd/main.go > /tmp/order.log 2>&1 &
       - echo "✅ Order запущен"
 
   services:start:assembly:
@@ -762,3 +773,51 @@ tasks:
       - task: services:stop
       - task: db:down
       - echo "✅ Development окружение остановлено"
+
+  # =========================================
+  # OBSERVABILITY TASKS (ELK Stack + OTLP)
+  # =========================================
+
+  observability:up:
+    desc: "Запустить Observability стек (Elasticsearch + Kibana + OTel Collector)"
+    dir: deploy/compose/observability
+    cmds:
+      - docker compose up -d
+      - sleep 5
+      - echo "[OK] Observability стек запущен"
+      - echo ""
+      - bash -c 'echo "Kibana UI at http://localhost:5601"'
+      - bash -c 'echo "Elasticsearch at http://localhost:9200"'
+      - bash -c 'echo "OTLP Collector (gRPC) at localhost:4317"'
+
+  observability:down:
+    desc: "Остановить Observability стек"
+    dir: deploy/compose/observability
+    cmds:
+      - docker compose down -v
+      - echo "[OK] Observability стек остановлен"
+
+  observability:logs:
+    desc: "Показать логи Observability стека"
+    dir: deploy/compose/observability
+    cmds:
+      - docker compose logs -f
+
+  observability:restart:
+    desc: "Перезагрузить Observability стек"
+    cmds:
+      - task: observability:down
+      - sleep 2
+      - task: observability:up
+
+  logs:kibana:
+    desc: "Открыть Kibana в браузере"
+    cmds:
+      - bash -c 'open http://localhost:5601 2>/dev/null || xdg-open http://localhost:5601 2>/dev/null || echo "Откройте http://localhost:5601 вручную"'
+
+  logs:elasticsearch:
+    desc: "Показать статус Elasticsearch"
+    cmds:
+      - bash -c 'curl -s http://localhost:9200/_cluster/health | jq .'
+      - echo ""
+      - bash -c 'echo "Перейти в Kibana at http://localhost:5601"'

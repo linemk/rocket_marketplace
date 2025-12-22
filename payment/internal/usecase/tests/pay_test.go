@@ -11,10 +11,14 @@ import (
 	"github.com/linemk/rocket-shop/payment/internal/entyties/apperrors"
 	"github.com/linemk/rocket-shop/payment/internal/mocks"
 	"github.com/linemk/rocket-shop/payment/internal/usecase"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	payment_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/payment/v1"
 )
 
 func TestPayOrder(t *testing.T) {
+	// Инициализируем logger для тестов
+	_ = logger.Init("info", false, false, "", "payment-test")
+
 	ctx := context.Background()
 
 	type fields struct {

@@ -2,10 +2,12 @@ package app
 
 import (
 	"context"
-	"log"
+
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/notification/internal/config"
 	"github.com/linemk/rocket-shop/platform/pkg/closer"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 )
 
 type App struct {
@@ -25,8 +27,10 @@ func NewApp(ctx context.Context) (*App, error) {
 
 func (a *App) Run(ctx context.Context) error {
 	defer func() {
+		_ = logger.Close()
+		_ = logger.Sync()
 		if err := closer.CloseAll(ctx); err != nil {
-			log.Printf("failed to close all resources: %s", err.Error())
+			logger.Error(ctx, "failed to close all resources", zap.Error(err))
 		}
 		closer.Wait()
 	}()
@@ -38,6 +42,8 @@ func (a *App) Run(ctx context.Context) error {
 func (a *App) initDeps(ctx context.Context) error {
 	inits := []func(context.Context) error{
 		a.initConfig,
+		a.initLogger,
+		a.initCloser,
 		a.initDiContainer,
 	}
 
@@ -51,12 +57,27 @@ func (a *App) initDeps(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) initConfig(_ context.Context) error {
+func (a *App) initConfig(ctx context.Context) error {
 	err := config.Load(".env")
 	if err != nil {
-		log.Printf("failed to load .env file: %s", err.Error())
+		logger.Warn(ctx, "failed to load .env file", zap.Error(err))
 	}
 
+	return nil
+}
+
+func (a *App) initLogger(_ context.Context) error {
+	return logger.Init(
+		config.AppConfig().Logger.Level(),
+		config.AppConfig().Logger.AsJSON(),
+		config.AppConfig().Logger.OTLPEnabled(),
+		config.AppConfig().Logger.OTLPEndpoint(),
+		config.AppConfig().Logger.ServiceName(),
+	)
+}
+
+func (a *App) initCloser(_ context.Context) error {
+	closer.SetLogger(logger.Logger())
 	return nil
 }
 

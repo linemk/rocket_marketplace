@@ -132,7 +132,13 @@ func (d *diContainer) TelegramService(ctx context.Context) service.TelegramServi
 
 func (d *diContainer) Logger(ctx context.Context) LoggerInterface {
 	// Инициализируем глобальный логгер если еще не инициализирован
-	if err := logger.Init(config.AppConfig().Logger.Level(), false); err != nil {
+	if err := logger.Init(
+		config.AppConfig().Logger.Level(),
+		config.AppConfig().Logger.AsJSON(),
+		config.AppConfig().Logger.OTLPEnabled(),
+		config.AppConfig().Logger.OTLPEndpoint(),
+		config.AppConfig().Logger.ServiceName(),
+	); err != nil {
 		panic(fmt.Sprintf("failed to init logger: %s\n", err.Error()))
 	}
 	return logger.Logger()

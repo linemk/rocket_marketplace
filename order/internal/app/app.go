@@ -45,6 +45,11 @@ func New(ctx context.Context) (*App, error) {
 
 // Run запускает приложение
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		_ = logger.Close()
+		_ = logger.Sync()
+	}()
+
 	// Запускаем Kafka consumer в отдельной горутине
 	go func() {
 		if err := a.diContainer.ConsumerService(ctx).RunConsumers(ctx); err != nil {
@@ -84,6 +89,9 @@ func (a *App) initLogger(_ context.Context) error {
 	return logger.Init(
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
+		config.AppConfig().Logger.OTLPEnabled(),
+		config.AppConfig().Logger.OTLPEndpoint(),
+		config.AppConfig().Logger.ServiceName(),
 	)
 }
 

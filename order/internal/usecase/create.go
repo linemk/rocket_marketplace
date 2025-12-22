@@ -30,16 +30,10 @@ func (uc *useCase) CreateOrder(ctx context.Context, info OrderInfo) (string, err
 
 	var totalPrice float32
 	for _, partUUID := range info.PartUUIDs {
-		logger.Debug(ctx, "GetPart request",
-			zap.String("part_uuid", partUUID.String()),
-			zap.String("session_uuid", sessionUUID),
-		)
+		fmt.Printf("DEBUG: GetPart for %s, sessionUUID=%s\n", partUUID, sessionUUID)
 		partInfo, err := uc.inventoryClient.GetPart(ctx, partUUID)
+		fmt.Printf("DEBUG: GetPart returned err=%v\n", err)
 		if err != nil {
-			logger.Debug(ctx, "GetPart failed",
-				zap.String("part_uuid", partUUID.String()),
-				zap.Error(err),
-			)
 			return "", apperrors.ErrPartNotFound
 		}
 
@@ -68,6 +62,13 @@ func (uc *useCase) CreateOrder(ctx context.Context, info OrderInfo) (string, err
 	if err := uc.orderRepository.Create(ctx, order); err != nil {
 		return "", fmt.Errorf("failed to create order: %w", err)
 	}
+
+	logger.Info(ctx, "Order created successfully",
+		zap.String("order_uuid", orderUUID.String()),
+		zap.String("user_uuid", info.UserID),
+		zap.Float32("total_price", totalPrice),
+		zap.Int("parts_count", len(info.PartUUIDs)),
+	)
 
 	return orderUUID.String(), nil
 }

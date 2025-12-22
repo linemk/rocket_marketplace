@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -12,18 +11,29 @@ import (
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/inventory/internal/entyties/models"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	inventory_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1"
 )
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatalf("Ошибка выполнения: %v", err)
+	ctx := context.Background()
+
+	// Инициализируем логгер
+	_ = logger.Init("info", false, false, "", "inventory-seed")
+	defer func() {
+		_ = logger.Close()
+		_ = logger.Sync()
+	}()
+
+	if err := run(ctx); err != nil {
+		logger.Fatal(ctx, "Ошибка выполнения", zap.Error(err))
 	}
 }
 
-func run() error {
+func run(ctx context.Context) error {
 	// Загружаем .env файл (игнорируем ошибку, т.к. файл может отсутствовать в CI)
 	//nolint:gosec,errcheck
 	_ = godotenv.Load("deploy/compose/inventory/.env")
@@ -63,7 +73,7 @@ func run() error {
 	}
 	defer func() {
 		if err := client.Disconnect(ctx); err != nil {
-			log.Printf("Ошибка при отключении от MongoDB: %v", err)
+			logger.Error(ctx, "Ошибка при отключении от MongoDB", zap.Error(err))
 		}
 	}()
 
@@ -77,18 +87,18 @@ func run() error {
 	// Создаем тестовые детали
 	parts := generateParts(10)
 
-	log.Printf("🌱 Заполняем базу данных %d тестовыми деталями...", len(parts))
+	logger.Info(ctx, "🌱 Заполняем базу данных тестовыми деталями", zap.Int("count", len(parts)))
 
 	for i, part := range parts {
 		_, err := collection.InsertOne(ctx, part)
 		if err != nil {
-			log.Printf("⚠️  Ошибка при вставке детали %d: %v", i+1, err)
+			logger.Error(ctx, "⚠️  Ошибка при вставке детали", zap.Int("index", i+1), zap.Error(err))
 			continue
 		}
-		log.Printf("✅ Создана деталь %d/%d: %s (UUID: %s)", i+1, len(parts), part.Name, part.UUID)
+		logger.Info(ctx, "✅ Создана деталь", zap.Int("index", i+1), zap.Int("total", len(parts)), zap.String("name", part.Name), zap.String("uuid", part.UUID))
 	}
 
-	log.Println("🎉 База данных успешно заполнена!")
+	logger.Info(ctx, "🎉 База данных успешно заполнена!")
 	return nil
 }
 
