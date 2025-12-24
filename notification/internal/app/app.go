@@ -27,8 +27,8 @@ func NewApp(ctx context.Context) (*App, error) {
 
 func (a *App) Run(ctx context.Context) error {
 	defer func() {
-		_ = logger.Close()
-		_ = logger.Sync()
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
 		if err := closer.CloseAll(ctx); err != nil {
 			logger.Error(ctx, "failed to close all resources", zap.Error(err))
 		}
@@ -66,8 +66,9 @@ func (a *App) initConfig(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) initLogger(_ context.Context) error {
+func (a *App) initLogger(ctx context.Context) error {
 	return logger.Init(
+		ctx,
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
 		config.AppConfig().Logger.OTLPEnabled(),

@@ -19,6 +19,7 @@ import (
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	httpmiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/http"
 	"github.com/linemk/rocket-shop/platform/pkg/migrator/pg"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 	order_v1 "github.com/linemk/rocket-shop/shared/pkg/openapi/order/v1"
 )
 
@@ -46,8 +47,16 @@ func New(ctx context.Context) (*App, error) {
 // Run запускает приложение
 func (a *App) Run(ctx context.Context) error {
 	defer func() {
-		_ = logger.Close()
-		_ = logger.Sync()
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
+	}()
+
+	// Запускаем metrics HTTP server в отдельной горутине
+	go func() {
+		metricsPort := fmt.Sprintf(":%d", config.AppConfig().Metrics.Port())
+		if err := prommetrics.StartMetricsServer(ctx, metricsPort, a.diContainer.PrometheusMetrics()); err != nil {
+			logger.Error(ctx, fmt.Sprintf("Metrics server error: %v", err))
+		}
 	}()
 
 	// Запускаем Kafka consumer в отдельной горутине
@@ -85,8 +94,9 @@ func (a *App) initConfig(_ context.Context) error {
 	return config.Load()
 }
 
-func (a *App) initLogger(_ context.Context) error {
+func (a *App) initLogger(ctx context.Context) error {
 	return logger.Init(
+		ctx,
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
 		config.AppConfig().Logger.OTLPEnabled(),
@@ -161,6 +171,10 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	r.Use(middleware.Timeout(10 * time.Second))
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Use(httpmiddleware.OptionalAuthMiddleware)
+
+	// Добавляем prometheus metrics middleware
+	httpMetrics := prommetrics.NewHTTPMetrics(a.diContainer.PrometheusMetrics())
+	r.Use(httpMetrics.Middleware())
 
 	r.Mount("/", orderServer)
 

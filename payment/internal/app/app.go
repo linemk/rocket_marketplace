@@ -37,8 +37,8 @@ func New(ctx context.Context) (*App, error) {
 // Run запускает приложение
 func (a *App) Run(ctx context.Context) error {
 	defer func() {
-		_ = logger.Close()
-		_ = logger.Sync()
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
 	}()
 
 	return a.runGRPCServer(ctx)
@@ -68,8 +68,9 @@ func (a *App) initConfig(_ context.Context) error {
 	return config.Load()
 }
 
-func (a *App) initLogger(_ context.Context) error {
+func (a *App) initLogger(ctx context.Context) error {
 	return logger.Init(
+		ctx,
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
 		config.AppConfig().Logger.OTLPEnabled(),

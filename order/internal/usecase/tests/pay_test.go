@@ -145,7 +145,7 @@ func TestPayOrder(t *testing.T) {
 			paymentClient := tt.fields.paymentClient()
 			orderProducerService := tt.fields.orderProducerService()
 
-			uc := usecase.NewUseCase(orderRepository, nil, paymentClient, orderProducerService)
+			uc := usecase.NewUseCase(orderRepository, nil, paymentClient, orderProducerService, nil)
 
 			result, err := uc.PayOrder(ctx, testUUID, order_v1.PaymentMethodPAYMENTMETHODCARD)
 

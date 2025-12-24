@@ -16,10 +16,11 @@ import (
 )
 
 func TestPayOrder(t *testing.T) {
-	// Инициализируем logger для тестов
-	_ = logger.Init("info", false, false, "", "payment-test")
-
 	ctx := context.Background()
+	// Инициализируем logger для тестов
+	if err := logger.Init(ctx, "info", false, false, "", "payment-test"); err != nil {
+		t.Fatalf("failed to init logger: %v", err)
+	}
 
 	type fields struct {
 		repoMock func() *mocks.MockPaymentRepository

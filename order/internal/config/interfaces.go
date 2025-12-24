@@ -14,6 +14,11 @@ type OrderHTTPConfig interface {
 	Address() string
 }
 
+// MetricsConfig интерфейс конфигурации Prometheus метрик
+type MetricsConfig interface {
+	Port() int
+}
+
 // PostgresConfig интерфейс конфигурации PostgreSQL
 type PostgresConfig interface {
 	DSN() string

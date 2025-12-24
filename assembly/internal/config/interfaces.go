@@ -9,6 +9,11 @@ type LoggerConfig interface {
 	ServiceName() string
 }
 
+//go:generate ../../bin/mockery --name MetricsConfig --output ./mocks --outpkg mocks --filename mock_metrics_config.go
+type MetricsConfig interface {
+	Port() int
+}
+
 //go:generate ../../bin/mockery --name KafkaConfig --output ./mocks --outpkg mocks --filename mock_kafka_config.go
 type KafkaConfig interface {
 	Brokers() []string

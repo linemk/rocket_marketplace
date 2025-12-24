@@ -1,0 +1,40 @@
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+
+scrape_configs:
+  - job_name: 'order-service'
+    static_configs:
+      - targets: ['host.docker.internal:9090']
+        labels:
+          service: 'order'
+
+  - job_name: 'assembly-service'
+    static_configs:
+      - targets: ['host.docker.internal:9091']
+        labels:
+          service: 'assembly'
+
+  - job_name: 'inventory-service'
+    static_configs:
+      - targets: ['host.docker.internal:9092']
+        labels:
+          service: 'inventory'
+
+  - job_name: 'payment-service'
+    static_configs:
+      - targets: ['host.docker.internal:9093']
+        labels:
+          service: 'payment'
+
+  - job_name: 'notification-service'
+    static_configs:
+      - targets: ['host.docker.internal:9094']
+        labels:
+          service: 'notification'
+
+  - job_name: 'iam-service'
+    static_configs:
+      - targets: ['host.docker.internal:9095']
+        labels:
+          service: 'iam'

@@ -11,6 +11,7 @@ import (
 	paymentClient "github.com/linemk/rocket-shop/order/internal/client/grpc/payment/v1"
 	"github.com/linemk/rocket-shop/order/internal/config"
 	v1 "github.com/linemk/rocket-shop/order/internal/delivery/v1"
+	ordermetrics "github.com/linemk/rocket-shop/order/internal/metrics"
 	"github.com/linemk/rocket-shop/order/internal/repository"
 	"github.com/linemk/rocket-shop/order/internal/service"
 	"github.com/linemk/rocket-shop/order/internal/service/consumer/order_consumer"
@@ -21,6 +22,7 @@ import (
 	"github.com/linemk/rocket-shop/platform/pkg/kafka/producer"
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	kafkaMiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/kafka"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 	iamclient "github.com/linemk/rocket-shop/shared/pkg/iamclient"
 	order_v1 "github.com/linemk/rocket-shop/shared/pkg/openapi/order/v1"
 )
@@ -38,6 +40,9 @@ type diContainer struct {
 
 	consumerService      service.ConsumerService
 	orderProducerService service.OrderProducerService
+
+	prometheusMetrics *prommetrics.Metrics
+	orderMetrics      *ordermetrics.OrderMetrics
 
 	dbPool *pgxpool.Pool
 }
@@ -65,6 +70,7 @@ func (d *diContainer) OrderUseCase(ctx context.Context) usecase.OrderUseCase {
 			d.InventoryClient(ctx),
 			d.PaymentClient(ctx),
 			d.OrderProducerService(ctx),
+			d.OrderMetrics(),
 		)
 	}
 
@@ -196,4 +202,32 @@ func (d *diContainer) IAMClient(ctx context.Context) *iamclient.Client {
 	}
 
 	return d.iamClient
+}
+
+func (d *diContainer) PrometheusMetrics() *prommetrics.Metrics {
+	if d.prometheusMetrics == nil {
+		d.prometheusMetrics = prommetrics.New()
+	}
+
+	return d.prometheusMetrics
+}
+
+func (d *diContainer) OrderMetrics() *ordermetrics.OrderMetrics {
+	if d.orderMetrics == nil {
+		pm := d.PrometheusMetrics()
+		d.orderMetrics = &ordermetrics.OrderMetrics{
+			OrdersTotal: pm.NewCounter(
+				"orders_total",
+				"Total number of orders created",
+				[]string{"status"},
+			),
+			RevenueTotal: pm.NewCounter(
+				"orders_revenue_total",
+				"Total revenue from orders",
+				[]string{"payment_method"},
+			),
+		}
+	}
+
+	return d.orderMetrics
 }

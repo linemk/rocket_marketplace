@@ -133,6 +133,7 @@ func (d *diContainer) TelegramService(ctx context.Context) service.TelegramServi
 func (d *diContainer) Logger(ctx context.Context) LoggerInterface {
 	// Инициализируем глобальный логгер если еще не инициализирован
 	if err := logger.Init(
+		ctx,
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
 		config.AppConfig().Logger.OTLPEnabled(),

@@ -30,9 +30,7 @@ func (uc *useCase) CreateOrder(ctx context.Context, info OrderInfo) (string, err
 
 	var totalPrice float32
 	for _, partUUID := range info.PartUUIDs {
-		fmt.Printf("DEBUG: GetPart for %s, sessionUUID=%s\n", partUUID, sessionUUID)
 		partInfo, err := uc.inventoryClient.GetPart(ctx, partUUID)
-		fmt.Printf("DEBUG: GetPart returned err=%v\n", err)
 		if err != nil {
 			return "", apperrors.ErrPartNotFound
 		}
@@ -62,6 +60,8 @@ func (uc *useCase) CreateOrder(ctx context.Context, info OrderInfo) (string, err
 	if err := uc.orderRepository.Create(ctx, order); err != nil {
 		return "", fmt.Errorf("failed to create order: %w", err)
 	}
+
+	uc.metrics.OrdersTotal.WithLabelValues("created").Inc()
 
 	logger.Info(ctx, "Order created successfully",
 		zap.String("order_uuid", orderUUID.String()),

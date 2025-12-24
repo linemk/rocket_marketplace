@@ -89,10 +89,47 @@ services:
     environment:
       - GOGC=80
 
+  # Prometheus - сбор метрик
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: rocket-shop-prometheus
+    ports:
+      - "9099:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - rocket_shop_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - rocket-shop-network
+
+  # Grafana - визуализация метрик
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: rocket-shop-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - rocket_shop_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - rocket-shop-network
+
 networks:
   rocket-shop-network:
     external: true
 
 volumes:
   rocket_shop_es_data:
+    driver: local
+  rocket_shop_prometheus_data:
+    driver: local
+  rocket_shop_grafana_data:
     driver: local

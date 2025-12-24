@@ -22,10 +22,12 @@ func main() {
 	ctx := context.Background()
 
 	// Инициализируем логгер
-	_ = logger.Init("info", false, false, "", "inventory-seed")
+	if err := logger.Init(ctx, "info", false, false, "", "inventory-seed"); err != nil {
+		panic(err)
+	}
 	defer func() {
-		_ = logger.Close()
-		_ = logger.Sync()
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
 	}()
 
 	if err := run(ctx); err != nil {
@@ -63,22 +65,24 @@ func run(ctx context.Context) error {
 	mongoURI := fmt.Sprintf("mongodb://%s:%s@localhost:%s/%s?authSource=admin",
 		mongoUser, mongoPassword, mongoPort, mongoDatabase)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Подключаемся к MongoDB
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	client, err := mongo.Connect(opCtx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
 		return fmt.Errorf("не удалось подключиться к MongoDB: %w", err)
 	}
 	defer func() {
-		if err := client.Disconnect(ctx); err != nil {
+		disconnectCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := client.Disconnect(disconnectCtx); err != nil {
 			logger.Error(ctx, "Ошибка при отключении от MongoDB", zap.Error(err))
 		}
 	}()
 
 	// Проверяем подключение
-	if err := client.Ping(ctx, nil); err != nil {
+	if err := client.Ping(opCtx, nil); err != nil {
 		return fmt.Errorf("не удалось проверить подключение к MongoDB: %w", err)
 	}
 
@@ -90,7 +94,7 @@ func run(ctx context.Context) error {
 	logger.Info(ctx, "🌱 Заполняем базу данных тестовыми деталями", zap.Int("count", len(parts)))
 
 	for i, part := range parts {
-		_, err := collection.InsertOne(ctx, part)
+		_, err := collection.InsertOne(opCtx, part)
 		if err != nil {
 			logger.Error(ctx, "⚠️  Ошибка при вставке детали", zap.Int("index", i+1), zap.Error(err))
 			continue

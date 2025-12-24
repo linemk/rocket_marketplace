@@ -43,6 +43,9 @@ func (uc *useCase) PayOrder(ctx context.Context, uuid string, paymentMethod orde
 		return "", fmt.Errorf("failed to update order: %w", err)
 	}
 
+	uc.metrics.OrdersTotal.WithLabelValues("paid").Inc()
+	uc.metrics.RevenueTotal.WithLabelValues(string(paymentMethod)).Add(float64(order.TotalPrice))
+
 	// 5. Отправляем событие OrderPaid
 	event := &events.OrderPaidEvent{
 		EventUUID:       uuidgen.New().String(),
