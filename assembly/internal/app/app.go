@@ -2,11 +2,14 @@ package app
 
 import (
 	"context"
-	"log"
+	"fmt"
+
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/assembly/internal/config"
 	"github.com/linemk/rocket-shop/platform/pkg/closer"
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 )
 
 type App struct {
@@ -26,10 +29,20 @@ func NewApp(ctx context.Context) (*App, error) {
 
 func (a *App) Run(ctx context.Context) error {
 	defer func() {
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
 		if err := closer.CloseAll(ctx); err != nil {
-			log.Printf("failed to close all resources: %s", err.Error())
+			logger.Error(ctx, "failed to close all resources", zap.Error(err))
 		}
 		closer.Wait()
+	}()
+
+	// Запускаем metrics HTTP server в отдельной горутине
+	go func() {
+		metricsPort := fmt.Sprintf(":%d", config.AppConfig().Metrics.Port())
+		if err := prommetrics.StartMetricsServer(ctx, metricsPort, a.diContainer.PrometheusMetrics()); err != nil {
+			logger.Error(ctx, fmt.Sprintf("Metrics server error: %v", err))
+		}
 	}()
 
 	// Запускаем Kafka consumers
@@ -54,17 +67,24 @@ func (a *App) initDeps(ctx context.Context) error {
 	return nil
 }
 
-func (a *App) initConfig(_ context.Context) error {
+func (a *App) initConfig(ctx context.Context) error {
 	err := config.Load(".env")
 	if err != nil {
-		log.Printf("failed to load .env file: %s", err.Error())
+		logger.Warn(ctx, "failed to load .env file", zap.Error(err))
 	}
 
 	return nil
 }
 
-func (a *App) initLogger(_ context.Context) error {
-	return logger.Init(config.AppConfig().Logger.Level(), false)
+func (a *App) initLogger(ctx context.Context) error {
+	return logger.Init(
+		ctx,
+		config.AppConfig().Logger.Level(),
+		config.AppConfig().Logger.AsJSON(),
+		config.AppConfig().Logger.OTLPEnabled(),
+		config.AppConfig().Logger.OTLPEndpoint(),
+		config.AppConfig().Logger.ServiceName(),
+	)
 }
 
 func (a *App) initCloser(_ context.Context) error {

@@ -1,0 +1,149 @@
+version: "3.9"
+
+services:
+  # Elasticsearch - хранилище логов
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.0.4
+    container_name: rocket-shop-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rocket-shop-network
+    volumes:
+      - rocket_shop_es_data:/usr/share/elasticsearch/data
+
+  # Kibana - UI для просмотра логов
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.0.4
+    container_name: rocket-shop-kibana
+    ports:
+      - "5601:5601"
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:5601/api/status || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rocket-shop-network
+
+  # Kibana initialization - создание Data View автоматически
+  kibana-init:
+    image: curlimages/curl:8.1.2
+    container_name: rocket-shop-kibana-init
+    depends_on:
+      kibana:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - rocket-shop-network
+    entrypoint: >
+      sh -c '
+      echo "Waiting for Kibana to be ready..."
+      sleep 10
+
+      echo "Creating Data View for rocket-shop-logs..."
+      curl -X POST http://kibana:5601/api/data_views/data_views \
+        -H "Content-Type: application/json" \
+        -H "kbn-xsrf: true" \
+        -d ''{
+          "data_view": {
+            "title": "rocket-shop-logs*",
+            "name": "rocket-shop-logs",
+            "timeFieldName": "timestamp"
+          }
+        }'' || true
+
+      echo "Data View creation attempt completed"
+      '''
+
+  # OpenTelemetry Collector - сбор и отправка логов в Elasticsearch
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.96.0
+    container_name: rocket-shop-otel-collector
+    command: ["--config=/etc/otel-collector-config.yaml"]
+    ports:
+      - "4317:4317"  # OTLP gRPC receiver
+      - "8888:8888"  # Prometheus metrics
+    volumes:
+      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+    depends_on:
+      elasticsearch:
+        condition: service_healthy
+    networks:
+      - rocket-shop-network
+    environment:
+      - GOGC=80
+
+  # Prometheus - сбор метрик
+  prometheus:
+    image: prom/prometheus:v2.54.1
+    container_name: rocket-shop-prometheus
+    ports:
+      - "9099:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - rocket_shop_prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - rocket-shop-network
+
+  # Grafana - визуализация метрик
+  grafana:
+    image: grafana/grafana:11.3.0
+    container_name: rocket-shop-grafana
+    ports:
+      - "3000:3000"
+    volumes:
+      - rocket_shop_grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    depends_on:
+      - prometheus
+    networks:
+      - rocket-shop-network
+
+  # Jaeger - визуализация распределённых трейсов
+  jaeger:
+    image: jaegertracing/all-in-one:1.53
+    container_name: rocket-shop-jaeger
+    ports:
+      - "16686:16686"  # Jaeger UI
+      - "14250:14250"  # gRPC для Jaeger native protocol
+      - "4318:4318"    # OTLP HTTP receiver
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+    networks:
+      - rocket-shop-network
+    restart: unless-stopped
+
+networks:
+  rocket-shop-network:
+    external: true
+
+volumes:
+  rocket_shop_es_data:
+    driver: local
+  rocket_shop_prometheus_data:
+    driver: local
+  rocket_shop_grafana_data:
+    driver: local

@@ -2,13 +2,14 @@ package usecase
 
 import (
 	"context"
-	"log"
 	"time"
 
 	"github.com/google/uuid"
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/payment/internal/entyties/apperrors"
 	"github.com/linemk/rocket-shop/payment/internal/entyties/models"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	payment_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/payment/v1"
 )
 
@@ -43,7 +44,7 @@ func (uc *useCase) PayOrder(ctx context.Context, orderUUID, userID string, payme
 	}
 
 	// Выводим сообщение в консоль согласно спецификации
-	log.Printf("Оплата прошла успешно, transaction_uuid: %s", transactionUUID.String())
+	logger.Info(ctx, "Оплата прошла успешно", zap.String("transaction_uuid", transactionUUID.String()))
 
 	return transactionUUID.String(), nil
 }

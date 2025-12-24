@@ -11,8 +11,11 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/grpc/metadata"
 
+	grpcmiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/grpc"
 	inventoryV1 "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1"
 )
+
+const testSessionUUID = "test-session-uuid-12345"
 
 var _ = Describe("InventoryService", func() {
 	var (
@@ -24,8 +27,8 @@ var _ = Describe("InventoryService", func() {
 	BeforeEach(func() {
 		ctx, cancel = context.WithCancel(suiteCtx)
 
-		// Добавляем session-uuid в metadata для авторизации
-		ctx = metadata.AppendToOutgoingContext(ctx, "session-uuid", "test-session-uuid")
+		// Добавляем session UUID в контекст для всех gRPC вызовов
+		ctx = metadata.AppendToOutgoingContext(ctx, grpcmiddleware.SessionUUIDHeader, testSessionUUID)
 
 		// Чистим коллекцию перед каждым тестом
 		err := env.ClearPartsCollection(ctx)

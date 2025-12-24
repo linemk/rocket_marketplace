@@ -30,12 +30,12 @@ func TestIntegration(t *testing.T) {
 }
 
 var _ = BeforeSuite(func() {
-	err := logger.Init("debug", true)
+	suiteCtx, suiteCancel = context.WithTimeout(context.Background(), testsTimeout)
+
+	err := logger.Init(suiteCtx, "debug", true, false, "", "inventory-integration")
 	if err != nil {
 		panic(fmt.Sprintf("не удалось инициализировать логгер: %v", err))
 	}
-
-	suiteCtx, suiteCancel = context.WithTimeout(context.Background(), testsTimeout)
 
 	// Устанавливаем переменные окружения для MongoDB
 	_ = os.Setenv("MONGO_INITDB_ROOT_USERNAME", "root")
@@ -49,7 +49,7 @@ var _ = BeforeSuite(func() {
 })
 
 var _ = AfterSuite(func() {
-	logger.Info(context.Background(), "Завершение набора тестов")
+	logger.Info(suiteCtx, "Завершение набора тестов")
 	if env != nil {
 		teardownTestEnvironment(suiteCtx, env)
 	}

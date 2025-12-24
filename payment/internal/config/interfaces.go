@@ -4,6 +4,9 @@ package config
 type LoggerConfig interface {
 	Level() string
 	AsJSON() bool
+	OTLPEnabled() bool
+	OTLPEndpoint() string
+	ServiceName() string
 }
 
 // PaymentGRPCConfig интерфейс конфигурации gRPC сервера Payment

@@ -3,7 +3,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"log"
 	"os"
 	"time"
 
@@ -12,18 +11,31 @@ import (
 	"github.com/joho/godotenv"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/inventory/internal/entyties/models"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	inventory_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1"
 )
 
 func main() {
-	if err := run(); err != nil {
-		log.Fatalf("Ошибка выполнения: %v", err)
+	ctx := context.Background()
+
+	// Инициализируем логгер
+	if err := logger.Init(ctx, "info", false, false, "", "inventory-seed"); err != nil {
+		panic(err)
+	}
+	defer func() {
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
+	}()
+
+	if err := run(ctx); err != nil {
+		logger.Fatal(ctx, "Ошибка выполнения", zap.Error(err))
 	}
 }
 
-func run() error {
+func run(ctx context.Context) error {
 	// Загружаем .env файл (игнорируем ошибку, т.к. файл может отсутствовать в CI)
 	//nolint:gosec,errcheck
 	_ = godotenv.Load("deploy/compose/inventory/.env")
@@ -53,22 +65,24 @@ func run() error {
 	mongoURI := fmt.Sprintf("mongodb://%s:%s@localhost:%s/%s?authSource=admin",
 		mongoUser, mongoPassword, mongoPort, mongoDatabase)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	opCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
 	// Подключаемся к MongoDB
-	client, err := mongo.Connect(ctx, options.Client().ApplyURI(mongoURI))
+	client, err := mongo.Connect(opCtx, options.Client().ApplyURI(mongoURI))
 	if err != nil {
 		return fmt.Errorf("не удалось подключиться к MongoDB: %w", err)
 	}
 	defer func() {
-		if err := client.Disconnect(ctx); err != nil {
-			log.Printf("Ошибка при отключении от MongoDB: %v", err)
+		disconnectCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		if err := client.Disconnect(disconnectCtx); err != nil {
+			logger.Error(ctx, "Ошибка при отключении от MongoDB", zap.Error(err))
 		}
 	}()
 
 	// Проверяем подключение
-	if err := client.Ping(ctx, nil); err != nil {
+	if err := client.Ping(opCtx, nil); err != nil {
 		return fmt.Errorf("не удалось проверить подключение к MongoDB: %w", err)
 	}
 
@@ -77,18 +91,18 @@ func run() error {
 	// Создаем тестовые детали
 	parts := generateParts(10)
 
-	log.Printf("🌱 Заполняем базу данных %d тестовыми деталями...", len(parts))
+	logger.Info(ctx, "🌱 Заполняем базу данных тестовыми деталями", zap.Int("count", len(parts)))
 
 	for i, part := range parts {
-		_, err := collection.InsertOne(ctx, part)
+		_, err := collection.InsertOne(opCtx, part)
 		if err != nil {
-			log.Printf("⚠️  Ошибка при вставке детали %d: %v", i+1, err)
+			logger.Error(ctx, "⚠️  Ошибка при вставке детали", zap.Int("index", i+1), zap.Error(err))
 			continue
 		}
-		log.Printf("✅ Создана деталь %d/%d: %s (UUID: %s)", i+1, len(parts), part.Name, part.UUID)
+		logger.Info(ctx, "✅ Создана деталь", zap.Int("index", i+1), zap.Int("total", len(parts)), zap.String("name", part.Name), zap.String("uuid", part.UUID))
 	}
 
-	log.Println("🎉 База данных успешно заполнена!")
+	logger.Info(ctx, "🎉 База данных успешно заполнена!")
 	return nil
 }
 

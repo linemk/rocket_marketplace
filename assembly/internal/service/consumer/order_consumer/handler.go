@@ -9,6 +9,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/assembly/internal/converter/kafka/decoder"
+	"github.com/linemk/rocket-shop/assembly/internal/metrics"
 	"github.com/linemk/rocket-shop/assembly/internal/model"
 	"github.com/linemk/rocket-shop/assembly/internal/service"
 	platformKafka "github.com/linemk/rocket-shop/platform/pkg/kafka"
@@ -16,12 +17,14 @@ import (
 
 type handler struct {
 	orderProducer service.OrderProducerService
+	metrics       *metrics.AssemblyMetrics
 	logger        Logger
 }
 
-func NewHandler(orderProducer service.OrderProducerService, logger Logger) HandlerFunc {
+func NewHandler(orderProducer service.OrderProducerService, metrics *metrics.AssemblyMetrics, logger Logger) HandlerFunc {
 	h := &handler{
 		orderProducer: orderProducer,
+		metrics:       metrics,
 		logger:        logger,
 	}
 
@@ -52,6 +55,14 @@ func (h *handler) Handle(ctx context.Context, msg platformKafka.Message) error {
 		zap.Int64("build_time_sec", buildTimeSec),
 	)
 
+	// Начинаем измерение времени сборки
+	startTime := time.Now()
+	status := "success"
+	defer func() {
+		duration := time.Since(startTime).Seconds()
+		h.metrics.Duration.WithLabelValues(status).Observe(duration)
+	}()
+
 	// Ждем buildTimeSec секунд через таймер с контекстом
 	timer := time.NewTimer(time.Duration(buildTimeSec) * time.Second)
 	defer timer.Stop()
@@ -60,6 +71,7 @@ func (h *handler) Handle(ctx context.Context, msg platformKafka.Message) error {
 	case <-timer.C:
 		// Сборка завершена
 	case <-ctx.Done():
+		status = "error"
 		return ctx.Err()
 	}
 

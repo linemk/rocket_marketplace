@@ -3,14 +3,15 @@ package inventory
 import (
 	"context"
 	"errors"
-	"log"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/options"
+	"go.uber.org/zap"
 
 	"github.com/linemk/rocket-shop/inventory/internal/entyties/models"
+	"github.com/linemk/rocket-shop/platform/pkg/logger"
 )
 
 // MongoRepository представляет MongoDB репозиторий для деталей
@@ -44,6 +45,7 @@ func NewMongoRepository(ctx context.Context, db *mongo.Database) *MongoRepositor
 
 	_, err := collection.Indexes().CreateMany(indexCtx, indexModels)
 	if err != nil {
+		logger.Error(ctx, "Failed to create index", zap.Error(err))
 		panic(err)
 	}
 
@@ -102,7 +104,7 @@ func (r *MongoRepository) ListParts(ctx context.Context, filter models.PartFilte
 	}
 	defer func() {
 		if err := cursor.Close(ctx); err != nil {
-			log.Printf("cursor close error: %v", err)
+			logger.Warn(ctx, "cursor close error", zap.Error(err))
 		}
 	}()
 

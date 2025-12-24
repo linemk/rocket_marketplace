@@ -4,11 +4,19 @@ package config
 type LoggerConfig interface {
 	Level() string
 	AsJSON() bool
+	OTLPEnabled() bool
+	OTLPEndpoint() string
+	ServiceName() string
 }
 
 // OrderHTTPConfig интерфейс конфигурации HTTP сервера Order
 type OrderHTTPConfig interface {
 	Address() string
+}
+
+// MetricsConfig интерфейс конфигурации Prometheus метрик
+type MetricsConfig interface {
+	Port() int
 }
 
 // PostgresConfig интерфейс конфигурации PostgreSQL

@@ -13,6 +13,7 @@ var appConfig *config
 type config struct {
 	Logger                 LoggerConfig
 	OrderHTTP              OrderHTTPConfig
+	Metrics                MetricsConfig
 	Postgres               PostgresConfig
 	InventoryGRPC          InventoryGRPCConfig
 	PaymentGRPC            PaymentGRPCConfig
@@ -35,6 +36,11 @@ func Load(path ...string) error {
 	}
 
 	orderHTTPCfg, err := env.NewOrderHTTPConfig()
+	if err != nil {
+		return err
+	}
+
+	metricsCfg, err := env.NewMetricsConfig()
 	if err != nil {
 		return err
 	}
@@ -77,6 +83,7 @@ func Load(path ...string) error {
 	appConfig = &config{
 		Logger:                 loggerCfg,
 		OrderHTTP:              orderHTTPCfg,
+		Metrics:                metricsCfg,
 		Postgres:               postgresCfg,
 		InventoryGRPC:          inventoryGRPCCfg,
 		PaymentGRPC:            paymentGRPCCfg,

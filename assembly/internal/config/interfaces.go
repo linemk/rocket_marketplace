@@ -3,6 +3,15 @@ package config
 //go:generate ../../bin/mockery --name LoggerConfig --output ./mocks --outpkg mocks --filename mock_logger_config.go
 type LoggerConfig interface {
 	Level() string
+	AsJSON() bool
+	OTLPEnabled() bool
+	OTLPEndpoint() string
+	ServiceName() string
+}
+
+//go:generate ../../bin/mockery --name MetricsConfig --output ./mocks --outpkg mocks --filename mock_metrics_config.go
+type MetricsConfig interface {
+	Port() int
 }
 
 //go:generate ../../bin/mockery --name KafkaConfig --output ./mocks --outpkg mocks --filename mock_kafka_config.go

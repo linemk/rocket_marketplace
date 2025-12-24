@@ -13,12 +13,17 @@ import (
 	"github.com/go-chi/render"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/propagation"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 
 	"github.com/linemk/rocket-shop/order/internal/config"
 	"github.com/linemk/rocket-shop/platform/pkg/closer"
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	httpmiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/http"
 	"github.com/linemk/rocket-shop/platform/pkg/migrator/pg"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
+	"github.com/linemk/rocket-shop/platform/pkg/tracing"
 	order_v1 "github.com/linemk/rocket-shop/shared/pkg/openapi/order/v1"
 )
 
@@ -27,8 +32,9 @@ const (
 )
 
 type App struct {
-	diContainer *diContainer
-	httpServer  *http.Server
+	diContainer    *diContainer
+	httpServer     *http.Server
+	tracerProvider *sdktrace.TracerProvider
 }
 
 // New создает новое приложение
@@ -45,6 +51,19 @@ func New(ctx context.Context) (*App, error) {
 
 // Run запускает приложение
 func (a *App) Run(ctx context.Context) error {
+	defer func() {
+		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
+		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
+	}()
+
+	// Запускаем metrics HTTP server в отдельной горутине
+	go func() {
+		metricsPort := fmt.Sprintf(":%d", config.AppConfig().Metrics.Port())
+		if err := prommetrics.StartMetricsServer(ctx, metricsPort, a.diContainer.PrometheusMetrics()); err != nil {
+			logger.Error(ctx, fmt.Sprintf("Metrics server error: %v", err))
+		}
+	}()
+
 	// Запускаем Kafka consumer в отдельной горутине
 	go func() {
 		if err := a.diContainer.ConsumerService(ctx).RunConsumers(ctx); err != nil {
@@ -60,6 +79,7 @@ func (a *App) initDeps(ctx context.Context) error {
 	inits := []func(context.Context) error{
 		a.initConfig,
 		a.initLogger,
+		a.initTracer,
 		a.initCloser,
 		a.initDI,
 		a.initMigrations,
@@ -80,15 +100,52 @@ func (a *App) initConfig(_ context.Context) error {
 	return config.Load()
 }
 
-func (a *App) initLogger(_ context.Context) error {
+func (a *App) initLogger(ctx context.Context) error {
 	return logger.Init(
+		ctx,
 		config.AppConfig().Logger.Level(),
 		config.AppConfig().Logger.AsJSON(),
+		config.AppConfig().Logger.OTLPEnabled(),
+		config.AppConfig().Logger.OTLPEndpoint(),
+		config.AppConfig().Logger.ServiceName(),
 	)
+}
+
+func (a *App) initTracer(ctx context.Context) error {
+	cfg := tracing.NewConfigFromEnv()
+	if !cfg.Enabled {
+		logger.Info(ctx, "Tracing disabled")
+		return nil
+	}
+
+	tp, err := tracing.InitTracerProvider(ctx, cfg)
+	if err != nil {
+		return fmt.Errorf("init tracer: %w", err)
+	}
+
+	a.tracerProvider = tp
+	otel.SetTracerProvider(tp)
+
+	propagator := propagation.NewCompositeTextMapPropagator(
+		propagation.TraceContext{},
+		propagation.Baggage{},
+	)
+	otel.SetTextMapPropagator(propagator)
+
+	logger.Info(ctx, fmt.Sprintf("✅ Tracing initialized for service: %s", cfg.ServiceName))
+
+	return nil
 }
 
 func (a *App) initCloser(_ context.Context) error {
 	closer.SetLogger(logger.Logger())
+
+	if a.tracerProvider != nil {
+		closer.AddNamed("tracer provider", func(ctx context.Context) error {
+			return tracing.ShutdownTracerProvider(ctx, a.tracerProvider)
+		})
+	}
+
 	return nil
 }
 
@@ -153,6 +210,16 @@ func (a *App) initHTTPServer(ctx context.Context) error {
 	r.Use(middleware.Timeout(10 * time.Second))
 	r.Use(render.SetContentType(render.ContentTypeJSON))
 	r.Use(httpmiddleware.OptionalAuthMiddleware)
+
+	// Добавляем tracing middleware если tracer инициализирован
+	if a.tracerProvider != nil {
+		r.Use(tracing.HTTPMiddleware(config.AppConfig().Logger.ServiceName()))
+		logger.Info(ctx, "✅ HTTP tracing middleware added")
+	}
+
+	// Добавляем prometheus metrics middleware
+	httpMetrics := prommetrics.NewHTTPMetrics(a.diContainer.PrometheusMetrics())
+	r.Use(httpMetrics.Middleware())
 
 	r.Mount("/", orderServer)
 

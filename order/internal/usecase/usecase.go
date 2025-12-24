@@ -8,6 +8,7 @@ import (
 	inventoryClient "github.com/linemk/rocket-shop/order/internal/client/grpc/inventory/v1"
 	paymentClient "github.com/linemk/rocket-shop/order/internal/client/grpc/payment/v1"
 	"github.com/linemk/rocket-shop/order/internal/entyties/models"
+	"github.com/linemk/rocket-shop/order/internal/metrics"
 	"github.com/linemk/rocket-shop/order/internal/repository"
 	"github.com/linemk/rocket-shop/order/internal/service"
 	order_v1 "github.com/linemk/rocket-shop/shared/pkg/openapi/order/v1"
@@ -33,6 +34,7 @@ type useCase struct {
 	inventoryClient      inventoryClient.InventoryClient
 	paymentClient        paymentClient.PaymentClient
 	orderProducerService service.OrderProducerService
+	metrics              *metrics.OrderMetrics
 }
 
 func NewUseCase(
@@ -40,11 +42,13 @@ func NewUseCase(
 	inventoryClient inventoryClient.InventoryClient,
 	paymentClient paymentClient.PaymentClient,
 	orderProducerService service.OrderProducerService,
+	metrics *metrics.OrderMetrics,
 ) OrderUseCase {
 	return &useCase{
 		orderRepository:      orderRepository,
 		inventoryClient:      inventoryClient,
 		paymentClient:        paymentClient,
 		orderProducerService: orderProducerService,
+		metrics:              metrics,
 	}
 }

@@ -78,7 +78,7 @@ func TestCancel(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			orderRepository := tt.fields.orderRepository()
 
-			uc := usecase.NewUseCase(orderRepository, nil, nil, nil)
+			uc := usecase.NewUseCase(orderRepository, nil, nil, nil, nil)
 
 			err := uc.CancelOrder(ctx, testUUID.String())
 			if tt.wantErr {

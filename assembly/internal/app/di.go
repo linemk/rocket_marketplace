@@ -7,6 +7,7 @@ import (
 	"github.com/IBM/sarama"
 
 	"github.com/linemk/rocket-shop/assembly/internal/config"
+	assemblymetrics "github.com/linemk/rocket-shop/assembly/internal/metrics"
 	"github.com/linemk/rocket-shop/assembly/internal/service"
 	"github.com/linemk/rocket-shop/assembly/internal/service/consumer/order_consumer"
 	"github.com/linemk/rocket-shop/assembly/internal/service/producer/order_producer"
@@ -15,11 +16,14 @@ import (
 	"github.com/linemk/rocket-shop/platform/pkg/kafka/producer"
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	kafkaMiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/kafka"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 )
 
 type diContainer struct {
 	consumerService      service.ConsumerService
 	orderProducerService service.OrderProducerService
+	prometheusMetrics    *prommetrics.Metrics
+	assemblyMetrics      *assemblymetrics.AssemblyMetrics
 }
 
 func NewDiContainer() *diContainer {
@@ -56,7 +60,7 @@ func (d *diContainer) ConsumerService(ctx context.Context) service.ConsumerServi
 		)
 
 		// Создаем handler
-		handler := order_consumer.NewHandler(d.OrderProducerService(ctx), logger.Logger())
+		handler := order_consumer.NewHandler(d.OrderProducerService(ctx), d.AssemblyMetrics(), logger.Logger())
 
 		d.consumerService = order_consumer.NewConsumer(kafkaConsumer, handler, logger.Logger())
 	}
@@ -92,4 +96,28 @@ func (d *diContainer) OrderProducerService(ctx context.Context) service.OrderPro
 	}
 
 	return d.orderProducerService
+}
+
+func (d *diContainer) PrometheusMetrics() *prommetrics.Metrics {
+	if d.prometheusMetrics == nil {
+		d.prometheusMetrics = prommetrics.New()
+	}
+
+	return d.prometheusMetrics
+}
+
+func (d *diContainer) AssemblyMetrics() *assemblymetrics.AssemblyMetrics {
+	if d.assemblyMetrics == nil {
+		pm := d.PrometheusMetrics()
+		d.assemblyMetrics = &assemblymetrics.AssemblyMetrics{
+			Duration: pm.NewHistogram(
+				"assembly_duration_seconds",
+				"Assembly process duration in seconds",
+				[]string{"status"},
+				[]float64{1, 2, 5, 10, 15, 20, 30},
+			),
+		}
+	}
+
+	return d.assemblyMetrics
 }
