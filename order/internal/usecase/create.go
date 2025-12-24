@@ -61,7 +61,9 @@ func (uc *useCase) CreateOrder(ctx context.Context, info OrderInfo) (string, err
 		return "", fmt.Errorf("failed to create order: %w", err)
 	}
 
-	uc.metrics.OrdersTotal.WithLabelValues("created").Inc()
+	if uc.metrics != nil {
+		uc.metrics.OrdersTotal.WithLabelValues("created").Inc()
+	}
 
 	logger.Info(ctx, "Order created successfully",
 		zap.String("order_uuid", orderUUID.String()),
