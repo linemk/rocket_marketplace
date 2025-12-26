@@ -19,7 +19,7 @@ FROM alpine:latest
 
 RUN apk --no-cache add ca-certificates
 
-WORKDIR /root/
+WORKDIR /app
 
 # Копируем бинарник из builder
 COPY --from=builder /order-service .

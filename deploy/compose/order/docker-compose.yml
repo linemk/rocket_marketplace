@@ -31,6 +31,10 @@ services:
     environment:
       - ORDER_POSTGRES_DSN=postgres://${ORDER_POSTGRES_USER}:${ORDER_POSTGRES_PASSWORD}@order-postgres:5432/${ORDER_POSTGRES_DB}?sslmode=disable
       - ORDER_HTTP_ADDRESS=:8080
+      - KAFKA_BROKERS=kafka:9092
+      - ORDER_PAID_PRODUCER_TOPIC=${ORDER_PAID_PRODUCER_TOPIC:-order.paid}
+      - ORDER_ASSEMBLED_CONSUMER_TOPIC=${ORDER_ASSEMBLED_CONSUMER_TOPIC:-ship.assembled}
+      - ORDER_ASSEMBLED_CONSUMER_GROUP_ID=${ORDER_ASSEMBLED_CONSUMER_GROUP_ID:-order-consumer-group}
     ports:
       - "8082:8080"
     depends_on:

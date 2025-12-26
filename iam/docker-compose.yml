@@ -41,8 +41,8 @@ services:
       dockerfile: deploy/docker/iam/Dockerfile
     container_name: iam-service
     environment:
-      - IAM_POSTGRES_DSN=postgres://iam_user:iam_password@iam_postgres:5432/iam_db?sslmode=disable
-      - IAM_REDIS_ADDR=iam_redis:6379
+      - IAM_DB_URI=postgres://iam_user:iam_password@iam_postgres:5432/iam_db?sslmode=disable
+      - REDIS_ADDR=iam_redis:6379
       - IAM_GRPC_ADDRESS=:50053
     ports:
       - "50053:50053"
