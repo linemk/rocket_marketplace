@@ -5,16 +5,25 @@ package inventory.v1;
 
 import "google/protobuf/timestamp.proto";
 import "google/protobuf/struct.proto";
+import "google/api/annotations.proto";
 
 option go_package = "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1;inventory_v1";
 
 // InventoryService предоставляет API для работы с инвентарем деталей
 service InventoryService {
   // GetPart возвращает информацию о детали по её UUID
-  rpc GetPart(GetPartRequest) returns (GetPartResponse);
-  
+  rpc GetPart(GetPartRequest) returns (GetPartResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/inventory/parts/{uuid}"
+    };
+  }
+
   // ListParts возвращает список деталей с возможностью фильтрации
-  rpc ListParts(ListPartsRequest) returns (ListPartsResponse);
+  rpc ListParts(ListPartsRequest) returns (ListPartsResponse) {
+    option (google.api.http) = {
+      get: "/api/v1/inventory/parts"
+    };
+  }
 }
 
 // Категория детали

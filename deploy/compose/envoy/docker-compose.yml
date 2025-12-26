@@ -1,0 +1,19 @@
+services:
+  envoy:
+    image: ${ENVOY_IMAGE}
+    container_name: rocket-shop-envoy
+    env_file:
+      - .env
+    ports:
+      - "${ENVOY_PORT}:8080"
+      - "${ENVOY_ADMIN_PORT}:8081"
+    volumes:
+      - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
+      - ../../../shared/pkg/proto/inventory/v1/inventory_descriptor.pb:/etc/envoy/inventory_descriptor.pb:ro
+    networks:
+      - rocket-shop-network
+    restart: unless-stopped
+
+networks:
+  rocket-shop-network:
+    external: true

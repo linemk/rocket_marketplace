@@ -21,6 +21,26 @@ services:
     networks:
       - rocket-shop-network
 
+  inventory-service:
+    build:
+      context: ../../../
+      dockerfile: deploy/docker/inventory/Dockerfile
+    container_name: inventory-service
+    env_file:
+      - .env
+    environment:
+      - INVENTORY_MONGO_URI=mongodb://${INVENTORY_MONGO_USER}:${INVENTORY_MONGO_PASSWORD}@inventory-mongodb:27017
+      - INVENTORY_MONGO_DB=${INVENTORY_MONGO_DB}
+      - INVENTORY_GRPC_ADDRESS=:50051
+    ports:
+      - "50051:50051"
+    depends_on:
+      inventory-mongodb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rocket-shop-network
+
 networks:
   rocket-shop-network:
     external: true

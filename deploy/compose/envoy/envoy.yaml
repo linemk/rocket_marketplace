@@ -1,0 +1,246 @@
+# ===============================
+# ENVOY PROXY КОНФИГУРАЦИЯ ДЛЯ ROCKET SHOP
+# HTTP↔HTTP для OrderService, HTTP↔gRPC для InventoryService с IAM аутентификацией
+# ===============================
+
+admin:
+  address:
+    socket_address:
+      address: 0.0.0.0
+      port_value: 8081
+
+static_resources:
+  listeners:
+  - name: rocket_shop_listener
+    address:
+      socket_address:
+        address: 0.0.0.0
+        port_value: 8080
+
+    filter_chains:
+    - filters:
+      - name: envoy.filters.network.http_connection_manager
+        typed_config:
+          "@type": type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager
+          stat_prefix: rocket_shop_api
+
+          # ===============================
+          # МАРШРУТИЗАЦИЯ
+          # ===============================
+          route_config:
+            name: rocket_shop_routes
+            virtual_hosts:
+            - name: rocket_shop
+              domains: ["*"]
+
+              # CORS настройки
+              cors:
+                allow_origin_string_match:
+                - prefix: "*"
+                allow_methods: GET, PUT, DELETE, POST, OPTIONS, PATCH
+                allow_headers: keep-alive,user-agent,cache-control,content-type,authorization,cookie,x-session-uuid
+                max_age: "1728000"
+                expose_headers: x-user-uuid,x-user-login,grpc-status,grpc-message
+
+              routes:
+              # Health check - БЕЗ аутентификации
+              - match:
+                  path: "/healthz"
+                direct_response:
+                  status: 200
+                  body:
+                    inline_string: '{"status":"ok"}'
+                typed_per_filter_config:
+                  envoy.filters.http.ext_authz:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                    disabled: true
+
+              # Auth endpoints (login, register) - БЕЗ аутентификации
+              - match:
+                  prefix: "/auth/"
+                route:
+                  cluster: iam_grpc_cluster
+                  timeout: 30s
+                typed_per_filter_config:
+                  envoy.filters.http.ext_authz:
+                    "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
+                    disabled: true
+
+              # Inventory Service (HTTP→gRPC transcoding) - ТРЕБУЕТ аутентификацию
+              - match:
+                  prefix: "/api/v1/inventory/"
+                route:
+                  cluster: inventory_grpc_cluster
+                  timeout: 30s
+
+              # Order Service (HTTP→HTTP) - ТРЕБУЕТ аутентификацию
+              - match:
+                  prefix: "/api/v1/orders"
+                route:
+                  cluster: order_http_cluster
+                  timeout: 30s
+
+              # Fallback маршрут
+              - match:
+                  prefix: "/"
+                direct_response:
+                  status: 404
+                  body:
+                    inline_string: |
+                      {
+                        "error": "Not Found",
+                        "available_endpoints": [
+                          "/healthz - Health check (no auth)",
+                          "/auth/register - Register user (no auth)",
+                          "/auth/login - Login (no auth)",
+                          "/api/v1/orders - Order Service (auth required)",
+                          "/api/v1/inventory/parts - Inventory Service (auth required)"
+                        ]
+                      }
+
+          # ===============================
+          # HTTP ФИЛЬТРЫ (ПОРЯДОК КРИТИЧЕН!)
+          # ===============================
+          http_filters:
+
+          # 1. CORS фильтр - ПЕРВЫЙ
+          - name: envoy.filters.http.cors
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.cors.v3.Cors
+
+          # 2. EXTERNAL AUTHORIZATION (gRPC) - ВТОРОЙ, ДО transcoder!
+          - name: envoy.filters.http.ext_authz
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthz
+
+              grpc_service:
+                envoy_grpc:
+                  cluster_name: iam_grpc_cluster
+                timeout: 2s
+
+              failure_mode_allow: false
+
+              with_request_body:
+                max_request_bytes: 8192
+                allow_partial_message: true
+                pack_as_bytes: false
+
+              include_peer_certificate: false
+
+              allowed_headers:
+                patterns:
+                  - exact: "authorization"
+                  - exact: "cookie"
+                  - exact: "x-session-uuid"
+                  - exact: "user-agent"
+                  - exact: "x-forwarded-for"
+                  - exact: "x-real-ip"
+                  - exact: "host"
+
+          # 3. gRPC JSON Transcoder - ТРЕТИЙ, после авторизации
+          - name: envoy.filters.http.grpc_json_transcoder
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_json_transcoder.v3.GrpcJsonTranscoder
+              proto_descriptor: "/etc/envoy/inventory_descriptor.pb"
+              services: ["inventory.v1.InventoryService"]
+              match_incoming_request_route: true
+              print_options:
+                add_whitespace: true
+                always_print_primitive_fields: true
+                always_print_enums_as_ints: false
+                preserve_proto_field_names: true
+              ignore_unknown_query_parameters: true
+
+          # 4. Router фильтр - ОБЯЗАТЕЛЬНО ПОСЛЕДНИЙ
+          - name: envoy.filters.http.router
+            typed_config:
+              "@type": type.googleapis.com/envoy.extensions.filters.http.router.v3.Router
+
+  # ===============================
+  # CLUSTERS
+  # ===============================
+  clusters:
+
+  # Order HTTP Service Cluster (HTTP/1.1)
+  - name: order_http_cluster
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+
+    # HTTP/1.1 для Order Service
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http_protocol_options: {}
+
+    load_assignment:
+      cluster_name: order_http_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: order-service
+                port_value: 8080
+
+  # Inventory gRPC Service Cluster (HTTP/2)
+  - name: inventory_grpc_cluster
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+
+    # HTTP/2 для gRPC
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options: {}
+
+    load_assignment:
+      cluster_name: inventory_grpc_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: inventory-service
+                port_value: 50051
+
+  # IAM gRPC Service Cluster (для External Authorization и auth endpoints)
+  - name: iam_grpc_cluster
+    type: STRICT_DNS
+    lb_policy: ROUND_ROBIN
+
+    # HTTP/2 для gRPC
+    typed_extension_protocol_options:
+      envoy.extensions.upstreams.http.v3.HttpProtocolOptions:
+        "@type": type.googleapis.com/envoy.extensions.upstreams.http.v3.HttpProtocolOptions
+        explicit_http_config:
+          http2_protocol_options:
+            max_concurrent_streams: 100
+            initial_stream_window_size: 65536
+            initial_connection_window_size: 1048576
+
+    circuit_breakers:
+      thresholds:
+      - priority: DEFAULT
+        max_connections: 10
+        max_pending_requests: 50
+        max_requests: 100
+        max_retries: 3
+        track_remaining: true
+
+    upstream_connection_options:
+      tcp_keepalive:
+        keepalive_probes: 3
+        keepalive_time: 30
+        keepalive_interval: 5
+
+    load_assignment:
+      cluster_name: iam_grpc_cluster
+      endpoints:
+      - lb_endpoints:
+        - endpoint:
+            address:
+              socket_address:
+                address: iam-service
+                port_value: 50053

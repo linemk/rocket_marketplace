@@ -197,6 +197,15 @@ tasks:
     dir: shared/proto
     cmds:
       - '{{.BUF}} generate'
+      - task: proto:build:inventory
+
+  proto:build:inventory:
+    desc: Сборка proto дескриптора для Inventory сервиса (для Envoy gRPC-JSON transcoder)
+    deps: [ install-buf, proto:install-plugins ]
+    dir: shared/proto
+    cmds:
+      - 'mkdir -p ../pkg/proto/inventory/v1'
+      - '{{.BUF}} build --path inventory --as-file-descriptor-set --output "../pkg/proto/inventory/v1/inventory_descriptor.pb"'
 
   proto:lint:
     deps: [ install-buf, proto:install-plugins ]
@@ -675,8 +684,29 @@ tasks:
     desc: "Запустить IAM service"
     cmds:
       - echo "🚀 Запускаем IAM service..."
-      - cd iam && go run cmd/main.go > /tmp/iam.log 2>&1 &
+      - docker-compose -f iam/docker-compose.yml up -d --build
       - echo "✅ IAM запущен"
+
+  services:start:inventory:
+    desc: "Запустить Inventory service"
+    cmds:
+      - echo "🚀 Запускаем Inventory service..."
+      - docker-compose -f deploy/compose/inventory/docker-compose.yml up -d --build
+      - echo "✅ Inventory запущен"
+
+  services:start:order:
+    desc: "Запустить Order service"
+    cmds:
+      - echo "🚀 Запускаем Order service..."
+      - docker-compose -f deploy/compose/order/docker-compose.yml up -d --build
+      - echo "✅ Order запущен"
+
+  services:start:envoy:
+    desc: "Запустить Envoy Gateway"
+    cmds:
+      - echo "🚀 Запускаем Envoy Gateway..."
+      - docker-compose -f deploy/compose/envoy/docker-compose.yml up -d
+      - echo "✅ Envoy Gateway запущен на http://localhost:8080"
 
   services:start:all:
     desc: "Запустить все микросервисы"
@@ -691,6 +721,8 @@ tasks:
       - task: services:start:assembly
       - sleep 3
       - task: services:start:notification
+      - sleep 2
+      - task: services:start:envoy
       - echo "✅ Все сервисы запущены"
 
   services:stop:
@@ -821,3 +853,75 @@ tasks:
       - bash -c 'curl -s http://localhost:9200/_cluster/health | jq .'
       - echo ""
       - bash -c 'echo "Перейти в Kibana at http://localhost:5601"'
+
+  # =========================================
+  # ENVOY GATEWAY TASKS
+  # =========================================
+
+  envoy:up:
+    desc: "Запустить Envoy Gateway с микросервисами"
+    deps: [ docker:network:create ]
+    dir: deploy/envoy
+    cmds:
+      - docker compose up -d --build
+      - sleep 5
+      - echo "✅ Envoy Gateway запущен"
+      - echo "Gateway at http://localhost:8080"
+      - echo "Admin at http://localhost:8081"
+
+  envoy:down:
+    desc: "Остановить Envoy Gateway"
+    dir: deploy/envoy
+    cmds:
+      - docker compose down -v
+      - echo "🛑 Envoy Gateway остановлен"
+
+  envoy:logs:
+    desc: "Показать логи Envoy и сервисов"
+    dir: deploy/envoy
+    cmds:
+      - docker compose logs -f
+
+  envoy:restart:
+    desc: "Перезапустить Envoy Gateway"
+    cmds:
+      - task: envoy:down
+      - sleep 2
+      - task: envoy:up
+
+  envoy:test:
+    desc: "Протестировать Envoy Gateway (регистрация, логин, запросы)"
+    cmds:
+      - |
+        echo "=== 1. Health Check ==="
+        curl -s http://localhost:8080/healthz | jq .
+        
+        echo -e "\n=== 2. Регистрация пользователя ==="
+        REGISTER_RESP=$(curl -s -X POST http://localhost:8080/auth/register \
+          -H "Content-Type: application/json" \
+          -d '{"login":"testuser","password":"testpass","email":"test@example.com"}')
+        echo $REGISTER_RESP | jq .
+        
+        echo -e "\n=== 3. Логин ==="
+        LOGIN_RESP=$(curl -s -X POST http://localhost:8080/auth/login \
+          -H "Content-Type: application/json" \
+          -d '{"login":"testuser","password":"testpass"}')
+        echo $LOGIN_RESP | jq .
+        
+        SESSION_UUID=$(echo $LOGIN_RESP | jq -r '.session_uuid // .sessionUuid // empty')
+        
+        if [ -z "$SESSION_UUID" ]; then
+          echo "❌ Не удалось получить session_uuid"
+          exit 1
+        fi
+        
+        echo "✅ Session UUID: $SESSION_UUID"
+        
+        echo -e "\n=== 4. Inventory без аутентификации (должно вернуть 403) ==="
+        curl -s http://localhost:8080/api/v1/inventory/parts | jq .
+        
+        echo -e "\n=== 5. Inventory с аутентификацией ==="
+        curl -s -H "Cookie: X-Session-Uuid=$SESSION_UUID" \
+          http://localhost:8080/api/v1/inventory/parts | jq .
+        
+        echo -e "\n✅ Тестирование завершено"

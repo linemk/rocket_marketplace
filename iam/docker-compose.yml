@@ -17,6 +17,8 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - rocket-shop-network
 
   redis:
     image: redis:7-alpine
@@ -30,6 +32,32 @@ services:
       interval: 10s
       timeout: 5s
       retries: 5
+    networks:
+      - rocket-shop-network
+
+  iam-service:
+    build:
+      context: ../
+      dockerfile: deploy/docker/iam/Dockerfile
+    container_name: iam-service
+    environment:
+      - IAM_POSTGRES_DSN=postgres://iam_user:iam_password@iam_postgres:5432/iam_db?sslmode=disable
+      - IAM_REDIS_ADDR=iam_redis:6379
+      - IAM_GRPC_ADDRESS=:50053
+    ports:
+      - "50053:50053"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - rocket-shop-network
+
+networks:
+  rocket-shop-network:
+    external: true
 
 volumes:
   iam_postgres_data:

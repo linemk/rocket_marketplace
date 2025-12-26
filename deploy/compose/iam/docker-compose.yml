@@ -1,0 +1,48 @@
+services:
+  iam-postgres:
+    image: ${IAM_POSTGRES_IMAGE}
+    container_name: iam-postgres
+    env_file:
+      - .env
+    environment:
+      POSTGRES_USER: ${IAM_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${IAM_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${IAM_POSTGRES_DB}
+    ports:
+      - "${IAM_POSTGRES_PORT}:5432"
+    volumes:
+      - iam-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${IAM_POSTGRES_USER}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - rocket-shop-network
+
+  iam-redis:
+    image: ${IAM_REDIS_IMAGE}
+    container_name: iam-redis
+    env_file:
+      - .env
+    ports:
+      - "${IAM_REDIS_PORT}:6379"
+    volumes:
+      - iam-redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+    networks:
+      - rocket-shop-network
+
+networks:
+  rocket-shop-network:
+    external: true
+
+volumes:
+  iam-pgdata:
+  iam-redisdata:
