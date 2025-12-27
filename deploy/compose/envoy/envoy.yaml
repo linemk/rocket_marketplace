@@ -55,7 +55,7 @@ static_resources:
                     "@type": type.googleapis.com/envoy.extensions.filters.http.ext_authz.v3.ExtAuthzPerRoute
                     disabled: true
 
-              # Auth endpoints (login, register) - БЕЗ аутентификации
+              # Auth endpoints (login, whoami) - БЕЗ ext_authz
               - match:
                   prefix: "/auth/"
                 route:
@@ -141,8 +141,10 @@ static_resources:
           - name: envoy.filters.http.grpc_json_transcoder
             typed_config:
               "@type": type.googleapis.com/envoy.extensions.filters.http.grpc_json_transcoder.v3.GrpcJsonTranscoder
-              proto_descriptor: "/etc/envoy/inventory_descriptor.pb"
-              services: ["inventory.v1.InventoryService"]
+              proto_descriptor: "/etc/envoy/combined_descriptor.pb"
+              services:
+                - "inventory.v1.InventoryService"
+                - "auth.v1.AuthService"
               match_incoming_request_route: true
               print_options:
                 add_whitespace: true

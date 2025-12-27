@@ -9,7 +9,7 @@ services:
       - "${ENVOY_ADMIN_PORT}:8081"
     volumes:
       - ./envoy.yaml:/etc/envoy/envoy.yaml:ro
-      - ../../../shared/pkg/proto/inventory/v1/inventory_descriptor.pb:/etc/envoy/inventory_descriptor.pb:ro
+      - ../../../shared/pkg/proto/combined_descriptor.pb:/etc/envoy/combined_descriptor.pb:ro
     networks:
       - rocket-shop-network
     restart: unless-stopped

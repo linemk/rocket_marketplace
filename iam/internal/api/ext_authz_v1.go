@@ -18,6 +18,7 @@ import (
 
 const (
 	SessionCookieName = "X-Session-Uuid"
+	SessionHeaderName = "x-session-uuid"
 
 	HeaderUserUUID    = "X-User-Uuid"
 	HeaderUserLogin   = "X-User-Login"
@@ -70,14 +71,22 @@ func (h *extAuthzV1Handler) extractSessionUUID(req *authv3.CheckRequest) (string
 
 	headers := req.Attributes.Request.Http.Headers
 
+	// Попытка 1: Извлечь из X-Session-UUID header
+	if sessionUUID, ok := headers[SessionHeaderName]; ok && sessionUUID != "" {
+		log.Printf("Session UUID found in header: %s", sessionUUID)
+		return sessionUUID, nil
+	}
+
+	// Попытка 2: Извлечь из Cookie
 	if cookieHeader, ok := headers[HeaderCookie]; ok && cookieHeader != "" {
 		sessionUUID := h.extractSessionFromCookies(cookieHeader)
 		if sessionUUID != "" {
+			log.Printf("Session UUID found in cookie: %s", sessionUUID)
 			return sessionUUID, nil
 		}
 	}
 
-	return "", fmt.Errorf("session uuid not found in cookies")
+	return "", fmt.Errorf("session uuid not found in headers or cookies")
 }
 
 func (h *extAuthzV1Handler) extractSessionFromCookies(cookieHeader string) string {

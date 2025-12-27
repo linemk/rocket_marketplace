@@ -198,6 +198,8 @@ tasks:
     cmds:
       - '{{.BUF}} generate'
       - task: proto:build:inventory
+      - task: proto:build:auth
+      - task: proto:build:combined
 
   proto:build:inventory:
     desc: Сборка proto дескриптора для Inventory сервиса (для Envoy gRPC-JSON transcoder)
@@ -206,6 +208,22 @@ tasks:
     cmds:
       - 'mkdir -p ../pkg/proto/inventory/v1'
       - '{{.BUF}} build --path inventory --as-file-descriptor-set --output "../pkg/proto/inventory/v1/inventory_descriptor.pb"'
+
+  proto:build:auth:
+    desc: Сборка proto дескриптора для Auth сервиса (для Envoy gRPC-JSON transcoder)
+    deps: [ install-buf, proto:install-plugins ]
+    dir: shared/proto
+    cmds:
+      - 'mkdir -p ../pkg/proto/auth/v1'
+      - '{{.BUF}} build --path auth --as-file-descriptor-set --output "../pkg/proto/auth/v1/auth_descriptor.pb"'
+
+  proto:build:combined:
+    desc: Сборка объединённого proto дескриптора для Envoy (Auth + Inventory)
+    deps: [ install-buf, proto:install-plugins ]
+    dir: shared/proto
+    cmds:
+      - 'mkdir -p ../pkg/proto'
+      - '{{.BUF}} build --path auth --path inventory --as-file-descriptor-set --output "../pkg/proto/combined_descriptor.pb"'
 
   proto:lint:
     deps: [ install-buf, proto:install-plugins ]
@@ -414,7 +432,8 @@ tasks:
 
         echo
         echo "📊 Тест 6: Проверка начального статуса заказа (должен быть PENDING_PAYMENT)"
-        ORDER_INFO_RESPONSE=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER_UUID")
+        ORDER_INFO_RESPONSE=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER_UUID" \
+          -H "X-Session-UUID: $SESSION_UUID")
         
         if [[ -z "$ORDER_INFO_RESPONSE" || "$ORDER_INFO_RESPONSE" == *"error"* ]]; then
           echo "❌ Не удалось получить информацию о заказе."
@@ -444,6 +463,7 @@ tasks:
         echo "💰 Тест 7: Оплата заказа (REST API)"
         PAY_RESPONSE=$(curl -s -X POST "http://localhost:8080/api/v1/orders/$ORDER_UUID/pay" \
           -H "Content-Type: application/json" \
+          -H "X-Session-UUID: $SESSION_UUID" \
           -d "{\"payment_method\":\"PAYMENT_METHOD_CARD\"}")
         
         if [[ "$PAY_RESPONSE" == *"error"* ]]; then
@@ -455,7 +475,10 @@ tasks:
 
         echo
         echo "📊 Тест 8: Проверка статуса после оплаты (должен быть PAID)"
-        ORDER_INFO_RESPONSE=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER_UUID")
+        echo "Ждём 3 секунды для асинхронной обработки платежа..."
+        sleep 3
+        ORDER_INFO_RESPONSE=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER_UUID" \
+          -H "X-Session-UUID: $SESSION_UUID")
         
         # Извлекаем статус заказа
         ORDER_STATUS=$(echo $ORDER_INFO_RESPONSE | grep -o '"status":"[^"]*' | cut -d'"' -f4)
@@ -496,7 +519,8 @@ tasks:
         echo "✅ Успешно создан второй заказ с UUID: $ORDER2_UUID"
         
         # Проверяем его начальный статус
-        ORDER2_INFO=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER2_UUID")
+        ORDER2_INFO=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER2_UUID" \
+          -H "X-Session-UUID: $SESSION_UUID")
         ORDER2_STATUS=$(echo $ORDER2_INFO | grep -o '"status":"[^"]*' | cut -d'"' -f4)
         if [ -z "$ORDER2_STATUS" ]; then
           ORDER2_STATUS=$(echo $ORDER2_INFO | grep -o '"status": "[^"]*' | cut -d'"' -f4)
@@ -513,11 +537,13 @@ tasks:
         echo "Ожидаем 2 секунды перед отменой..."
         sleep 2
         
-        curl -s -X POST "http://localhost:8080/api/v1/orders/$ORDER2_UUID/cancel"
+        curl -s -X POST "http://localhost:8080/api/v1/orders/$ORDER2_UUID/cancel" \
+          -H "X-Session-UUID: $SESSION_UUID"
         
         echo "Проверяем статус после отмены..."
-        
-        ORDER2_INFO=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER2_UUID")
+
+        ORDER2_INFO=$(curl -s -X GET "http://localhost:8080/api/v1/orders/$ORDER2_UUID" \
+          -H "X-Session-UUID: $SESSION_UUID")
         ORDER2_STATUS=$(echo $ORDER2_INFO | grep -o '"status":"[^"]*' | cut -d'"' -f4)
         if [ -z "$ORDER2_STATUS" ]; then
           ORDER2_STATUS=$(echo $ORDER2_INFO | grep -o '"status": "[^"]*' | cut -d'"' -f4)
@@ -639,42 +665,22 @@ tasks:
       - task: kafka:down
       - echo '[OK] Вся инфраструктура остановлена'
 
-  services:start:inventory:
-    desc: "Запустить Inventory service"
-    cmds:
-      - echo "🚀 Запускаем Inventory service..."
-      - cd inventory && go run cmd/main.go > /tmp/inventory.log 2>&1 &
-      - echo "✅ Inventory запущен"
-
   services:start:payment:
-    desc: "Запустить Payment service"
+    desc: "Запустить Payment service (Go process в фоне)"
     cmds:
       - echo "🚀 Запускаем Payment service..."
       - cd payment && go run cmd/main.go > /tmp/payment.log 2>&1 &
       - echo "✅ Payment запущен"
 
-  services:start:order:
-    desc: "Запустить Order service"
-    cmds:
-      - echo "🚀 Запускаем Order service..."
-      - |
-        cd order && \
-        OTLP_ENABLED=true \
-        OTLP_ENDPOINT=localhost:4317 \
-        LOG_AS_JSON=true \
-        SERVICE_NAME=order \
-        go run cmd/main.go > /tmp/order.log 2>&1 &
-      - echo "✅ Order запущен"
-
   services:start:assembly:
-    desc: "Запустить Assembly service"
+    desc: "Запустить Assembly service (Go process в фоне)"
     cmds:
       - echo "🚀 Запускаем Assembly service..."
       - cd assembly && go run cmd/main.go > /tmp/assembly.log 2>&1 &
       - echo "✅ Assembly запущен"
 
   services:start:notification:
-    desc: "Запустить Notification service"
+    desc: "Запустить Notification service (Go process в фоне)"
     cmds:
       - echo "🚀 Запускаем Notification service..."
       - cd notification && go run cmd/main.go > /tmp/notification.log 2>&1 &
