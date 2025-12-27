@@ -15,6 +15,7 @@ type config struct {
 	InventoryGRPC InventoryGRPCConfig
 	IAMGRPC       IAMGRPCConfig
 	Mongo         MongoConfig
+	Metrics       MetricsConfig
 }
 
 // Load загружает конфигурацию из переменных окружения
@@ -44,11 +45,17 @@ func Load(path ...string) error {
 		return err
 	}
 
+	metricsCfg, err := env.NewMetricsConfig()
+	if err != nil {
+		return err
+	}
+
 	appConfig = &config{
 		Logger:        loggerCfg,
 		InventoryGRPC: inventoryGRPCCfg,
 		IAMGRPC:       iamGRPCCfg,
 		Mongo:         mongoCfg,
+		Metrics:       metricsCfg,
 	}
 
 	return nil

@@ -24,3 +24,8 @@ type MongoConfig interface {
 	URI() string
 	DatabaseName() string
 }
+
+// MetricsConfig интерфейс конфигурации Prometheus метрик
+type MetricsConfig interface {
+	Port() int
+}

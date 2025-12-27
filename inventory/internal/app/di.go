@@ -14,6 +14,7 @@ import (
 	inventoryRepository "github.com/linemk/rocket-shop/inventory/internal/repository/inventory"
 	"github.com/linemk/rocket-shop/inventory/internal/usecase"
 	"github.com/linemk/rocket-shop/platform/pkg/closer"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 	iamclient "github.com/linemk/rocket-shop/shared/pkg/iamclient"
 	inventory_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1"
 )
@@ -25,9 +26,10 @@ type diContainer struct {
 
 	inventoryRepository repository.InventoryRepository
 
-	mongoDBClient *mongo.Client
-	mongoDBHandle *mongo.Database
-	iamClient     *iamclient.Client
+	mongoDBClient     *mongo.Client
+	mongoDBHandle     *mongo.Database
+	iamClient         *iamclient.Client
+	prometheusMetrics *prommetrics.Metrics
 }
 
 func NewDiContainer() *diContainer {
@@ -100,4 +102,12 @@ func (d *diContainer) IAMClient(ctx context.Context) *iamclient.Client {
 		d.iamClient = client
 	}
 	return d.iamClient
+}
+
+func (d *diContainer) PrometheusMetrics() *prommetrics.Metrics {
+	if d.prometheusMetrics == nil {
+		d.prometheusMetrics = prommetrics.New()
+	}
+
+	return d.prometheusMetrics
 }
