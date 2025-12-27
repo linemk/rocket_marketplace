@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	authv3 "github.com/envoyproxy/go-control-plane/envoy/service/auth/v3"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 	"google.golang.org/grpc"
@@ -178,6 +179,7 @@ func (a *App) initGRPCServer(ctx context.Context) error {
 
 	authv1.RegisterAuthServiceServer(a.grpcServer, a.diContainer.AuthHandler)
 	userv1.RegisterUserServiceServer(a.grpcServer, a.diContainer.UserHandler)
+	authv3.RegisterAuthorizationServer(a.grpcServer, a.diContainer.ExtAuthzHandler)
 
 	reflection.Register(a.grpcServer)
 

@@ -14,6 +14,7 @@ import (
 	"github.com/linemk/rocket-shop/platform/pkg/grpc/health"
 	"github.com/linemk/rocket-shop/platform/pkg/logger"
 	grpcmiddleware "github.com/linemk/rocket-shop/platform/pkg/middleware/grpc"
+	prommetrics "github.com/linemk/rocket-shop/platform/pkg/prometheus"
 	inventory_v1 "github.com/linemk/rocket-shop/shared/pkg/proto/inventory/v1"
 )
 
@@ -40,6 +41,14 @@ func (a *App) Run(ctx context.Context) error {
 	defer func() {
 		_ = logger.Close(ctx) //nolint:gosec // best-effort shutdown
 		_ = logger.Sync()     //nolint:gosec // best-effort shutdown
+	}()
+
+	// Запускаем metrics HTTP server в отдельной горутине
+	go func() {
+		metricsPort := fmt.Sprintf(":%d", config.AppConfig().Metrics.Port())
+		if err := prommetrics.StartMetricsServer(ctx, metricsPort, a.diContainer.PrometheusMetrics()); err != nil {
+			logger.Error(ctx, fmt.Sprintf("Metrics server error: %v", err))
+		}
 	}()
 
 	return a.runGRPCServer(ctx)

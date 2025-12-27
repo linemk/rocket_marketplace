@@ -5,7 +5,7 @@ global:
 scrape_configs:
   - job_name: 'order-service'
     static_configs:
-      - targets: ['host.docker.internal:9090']
+      - targets: ['order-service:9090']
         labels:
           service: 'order'
 
@@ -17,7 +17,7 @@ scrape_configs:
 
   - job_name: 'inventory-service'
     static_configs:
-      - targets: ['host.docker.internal:9092']
+      - targets: ['inventory-service:9092']
         labels:
           service: 'inventory'
 
@@ -35,6 +35,6 @@ scrape_configs:
 
   - job_name: 'iam-service'
     static_configs:
-      - targets: ['host.docker.internal:9095']
+      - targets: ['iam-service:9095']
         labels:
           service: 'iam'
